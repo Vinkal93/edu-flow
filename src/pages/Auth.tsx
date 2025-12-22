@@ -180,13 +180,7 @@ const Auth = () => {
                     <Input
                       id="email"
                       type="email"
-                      placeholder={
-                        loginType === "student" 
-                          ? "student@institute.com" 
-                          : loginType === "teacher"
-                          ? "teacher@institute.com"
-                          : "admin@institute.com"
-                      }
+                      placeholder="Enter your email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -199,7 +193,7 @@ const Auth = () => {
                       <Input
                         id="password"
                         type={showPassword ? "text" : "password"}
-                        placeholder="••••••••"
+                        placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
@@ -287,6 +281,11 @@ const Auth = () => {
             ← Back to Home
           </Link>
         </div>
+
+        {/* Copyright */}
+        <p className="text-xs text-muted-foreground text-center mt-6">
+          Developed by <span className="font-medium text-foreground">Vinkal Prajapati</span>
+        </p>
       </div>
     </div>
   );
