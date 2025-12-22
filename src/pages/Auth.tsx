@@ -8,43 +8,79 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GraduationCap, Eye, EyeOff, Building2, User, BookOpen } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { z } from "zod";
-
-const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
 
 const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [loginType, setLoginType] = useState<"institute" | "teacher" | "student">("institute");
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { signIn, signUp, user, roles, isLoading: authLoading } = useAuth();
+  const { user, roles, isLoading: authLoading } = useAuth();
 
+  // Redirect authenticated users based on their role
   useEffect(() => {
-    if (!authLoading && user) {
-      // Redirect based on role
+    if (!authLoading && user && roles.length > 0) {
       if (roles.includes("student")) {
-        navigate("/student");
+        navigate("/student", { replace: true });
       } else if (roles.includes("institute_admin") || roles.includes("teacher")) {
-        navigate("/dashboard");
+        navigate("/dashboard", { replace: true });
       }
     }
   }, [user, roles, authLoading, navigate]);
 
+  const resolveEmailFromId = async (id: string, type: "teacher" | "student"): Promise<string | null> => {
+    try {
+      if (type === "teacher") {
+        // Look up teacher by employee_id
+        const { data: teacher } = await supabase
+          .from("teachers")
+          .select("profile_id")
+          .eq("employee_id", id)
+          .maybeSingle();
+
+        if (teacher?.profile_id) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("email")
+            .eq("id", teacher.profile_id)
+            .maybeSingle();
+          return profile?.email || null;
+        }
+      } else {
+        // Look up student by registration_number or roll_number
+        const { data: student } = await supabase
+          .from("students")
+          .select("profile_id")
+          .or(`registration_number.eq.${id},roll_number.eq.${id}`)
+          .maybeSingle();
+
+        if (student?.profile_id) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("email")
+            .eq("id", student.profile_id)
+            .maybeSingle();
+          return profile?.email || null;
+        }
+      }
+    } catch (error) {
+      console.error("Error resolving ID:", error);
+    }
+    return null;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const validation = loginSchema.safeParse({ email, password });
-    if (!validation.success) {
+    if (!identifier.trim() || !password.trim()) {
       toast({
         title: "Validation Error",
-        description: validation.error.errors[0].message,
+        description: "Please enter your credentials",
         variant: "destructive",
       });
       return;
@@ -52,22 +88,76 @@ const Auth = () => {
 
     setIsLoading(true);
 
-    const { error } = await signIn(email, password);
+    let emailToUse = identifier;
+
+    // For teachers and students, resolve ID to email if not an email
+    if (loginType !== "institute" && !identifier.includes("@")) {
+      const resolvedEmail = await resolveEmailFromId(identifier, loginType);
+      if (!resolvedEmail) {
+        toast({
+          title: "Login Failed",
+          description: `No ${loginType} found with this ID. Please check your ID and try again.`,
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+      emailToUse = resolvedEmail;
+    }
+
+    // Validate email format for institute or if email is provided
+    if (loginType === "institute" && !identifier.includes("@")) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailToUse,
+      password,
+    });
 
     if (error) {
       toast({
         title: "Login Failed",
         description: error.message === "Invalid login credentials" 
-          ? "Invalid email or password. Please check your credentials."
+          ? "Invalid credentials. Please check and try again."
           : error.message,
         variant: "destructive",
       });
-    } else {
-      toast({
-        title: "Login Successful",
-        description: "Welcome back!",
-      });
+      setIsLoading(false);
+      return;
     }
+
+    toast({
+      title: "Login Successful",
+      description: "Redirecting to dashboard...",
+    });
+
+    // Fetch roles and navigate
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (authUser) {
+      const { data: rolesData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", authUser.id);
+
+      const userRoles = rolesData?.map(r => r.role) || [];
+
+      // Navigate based on role
+      setTimeout(() => {
+        if (userRoles.includes("student")) {
+          navigate("/student", { replace: true });
+        } else {
+          navigate("/dashboard", { replace: true });
+        }
+      }, 500);
+    }
+
     setIsLoading(false);
   };
 
@@ -77,17 +167,25 @@ const Auth = () => {
     if (!fullName.trim()) {
       toast({
         title: "Validation Error",
-        description: "Please enter your name",
+        description: "Please enter your institute name",
         variant: "destructive",
       });
       return;
     }
 
-    const validation = loginSchema.safeParse({ email, password });
-    if (!validation.success) {
+    if (!identifier.includes("@")) {
       toast({
         title: "Validation Error",
-        description: validation.error.errors[0].message,
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (password.length < 6) {
+      toast({
+        title: "Validation Error",
+        description: "Password must be at least 6 characters",
         variant: "destructive",
       });
       return;
@@ -95,7 +193,18 @@ const Auth = () => {
 
     setIsLoading(true);
 
-    const { error } = await signUp(email, password, fullName);
+    const redirectUrl = `${window.location.origin}/`;
+    
+    const { error } = await supabase.auth.signUp({
+      email: identifier,
+      password,
+      options: {
+        emailRedirectTo: redirectUrl,
+        data: {
+          full_name: fullName,
+        },
+      },
+    });
 
     if (error) {
       if (error.message.includes("already registered")) {
@@ -114,7 +223,7 @@ const Auth = () => {
     } else {
       toast({
         title: "Registration Successful",
-        description: "Please check your email to verify your account.",
+        description: "Your account has been created. Please login.",
       });
     }
     setIsLoading(false);
@@ -125,6 +234,40 @@ const Auth = () => {
     { id: "teacher", label: "Teacher", icon: BookOpen, description: "Teacher Login" },
     { id: "student", label: "Student", icon: User, description: "Student Login" },
   ] as const;
+
+  const getPlaceholder = () => {
+    switch (loginType) {
+      case "institute":
+        return "Enter your email address";
+      case "teacher":
+        return "Enter your Employee ID";
+      case "student":
+        return "Enter your Registration/Roll Number";
+    }
+  };
+
+  const getLabel = () => {
+    switch (loginType) {
+      case "institute":
+        return "Email Address";
+      case "teacher":
+        return "Employee ID";
+      case "student":
+        return "Student ID / Roll Number";
+    }
+  };
+
+  // Show loading while checking auth state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -144,10 +287,14 @@ const Auth = () => {
           {loginTypes.map((type) => (
             <button
               key={type.id}
-              onClick={() => setLoginType(type.id)}
+              onClick={() => {
+                setLoginType(type.id);
+                setIdentifier("");
+                setPassword("");
+              }}
               className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-all ${
                 loginType === type.id
-                  ? "border-primary bg-primary/5 text-primary"
+                  ? "border-primary bg-primary/10 text-primary"
                   : "border-border bg-card text-muted-foreground hover:border-primary/50"
               }`}
             >
@@ -162,7 +309,12 @@ const Auth = () => {
             <CardTitle className="text-2xl text-foreground">
               {loginTypes.find((t) => t.id === loginType)?.description}
             </CardTitle>
-            <CardDescription>Enter your credentials to continue</CardDescription>
+            <CardDescription>
+              {loginType === "institute" 
+                ? "Enter your email and password"
+                : "Enter your ID and password provided by institute"
+              }
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="login" className="w-full">
@@ -176,14 +328,15 @@ const Auth = () => {
               <TabsContent value="login">
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="identifier">{getLabel()}</Label>
                     <Input
-                      id="email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      id="identifier"
+                      type={loginType === "institute" ? "email" : "text"}
+                      placeholder={getPlaceholder()}
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
                       required
+                      autoComplete="username"
                     />
                   </div>
 
@@ -197,6 +350,7 @@ const Auth = () => {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
+                        autoComplete="current-password"
                       />
                       <button
                         type="button"
@@ -217,11 +371,11 @@ const Auth = () => {
               <TabsContent value="signup">
                 <form onSubmit={handleSignUp} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signup-name">Institute / Full Name</Label>
+                    <Label htmlFor="signup-name">Institute Name</Label>
                     <Input
                       id="signup-name"
                       type="text"
-                      placeholder="Enter your name"
+                      placeholder="Enter your institute name"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       required
@@ -229,13 +383,13 @@ const Auth = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
+                    <Label htmlFor="signup-email">Email Address</Label>
                     <Input
                       id="signup-email"
                       type="email"
-                      placeholder="admin@institute.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="Enter your email address"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
                       required
                     />
                   </div>
@@ -246,7 +400,7 @@ const Auth = () => {
                       <Input
                         id="signup-password"
                         type={showPassword ? "text" : "password"}
-                        placeholder="••••••••"
+                        placeholder="Create a strong password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
@@ -268,8 +422,8 @@ const Auth = () => {
               </TabsContent>
             </Tabs>
 
-            {loginType === "student" && (
-              <p className="text-xs text-muted-foreground text-center mt-4">
+            {loginType !== "institute" && (
+              <p className="text-xs text-muted-foreground text-center mt-4 p-2 bg-muted/50 rounded-lg">
                 Your login credentials are provided by your institute
               </p>
             )}
