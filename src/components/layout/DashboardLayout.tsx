@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   ChevronDown,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -24,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -34,6 +36,7 @@ const menuItems = [
   { icon: Users, label: "Students", path: "/dashboard/students" },
   { icon: GraduationCap, label: "Teachers", path: "/dashboard/teachers" },
   { icon: BookOpen, label: "Courses", path: "/dashboard/courses" },
+  { icon: Layers, label: "Batches", path: "/dashboard/batches" },
   { icon: DollarSign, label: "Fees", path: "/dashboard/fees" },
   { icon: CalendarCheck, label: "Attendance", path: "/dashboard/attendance" },
   { icon: FileText, label: "Exams", path: "/dashboard/exams" },
@@ -45,9 +48,20 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  const { profile, signOut } = useAuth();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await signOut();
     navigate("/login");
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
   };
 
   return (
@@ -101,11 +115,17 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           <div className="p-4 border-t border-border">
             <div className="flex items-center gap-3">
               <Avatar className="w-10 h-10 bg-primary">
-                <AvatarFallback className="bg-primary text-primary-foreground">EC</AvatarFallback>
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  {profile?.full_name ? getInitials(profile.full_name) : "U"}
+                </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">Excel Academy</p>
-                <p className="text-xs text-muted-foreground truncate">admin@excel.com</p>
+                <p className="text-sm font-medium text-foreground truncate">
+                  {profile?.full_name || "User"}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {profile?.email || ""}
+                </p>
               </div>
             </div>
           </div>
@@ -144,7 +164,9 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" className="gap-2">
                     <Avatar className="w-8 h-8 bg-primary">
-                      <AvatarFallback className="bg-primary text-primary-foreground text-sm">EC</AvatarFallback>
+                      <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                        {profile?.full_name ? getInitials(profile.full_name) : "U"}
+                      </AvatarFallback>
                     </Avatar>
                     <ChevronDown className="w-4 h-4 text-muted-foreground" />
                   </Button>
@@ -169,6 +191,13 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         <main className="p-6">
           {children}
         </main>
+
+        {/* Footer with Copyright */}
+        <footer className="px-6 py-4 border-t border-border text-center">
+          <p className="text-xs text-muted-foreground">
+            © {new Date().getFullYear()} EduPro. Developed by <span className="font-medium text-foreground">Vinkal Prajapati</span>
+          </p>
+        </footer>
       </div>
     </div>
   );

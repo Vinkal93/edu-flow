@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import Teachers from "./pages/Teachers";
 import Courses from "./pages/Courses";
+import Batches from "./pages/Batches";
 import Fees from "./pages/Fees";
 import Attendance from "./pages/Attendance";
 import StudentDashboard from "./pages/StudentDashboard";
@@ -56,6 +57,11 @@ const App = () => (
             <Route path="/dashboard/courses" element={
               <ProtectedRoute allowedRoles={["institute_admin", "teacher"]}>
                 <Courses />
+              </ProtectedRoute>
+            } />
+            <Route path="/dashboard/batches" element={
+              <ProtectedRoute allowedRoles={["institute_admin", "teacher"]}>
+                <Batches />
               </ProtectedRoute>
             } />
             <Route path="/dashboard/fees" element={
