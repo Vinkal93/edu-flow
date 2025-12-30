@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,108 +30,156 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, Download, Filter, Eye, Edit, Trash2 } from "lucide-react";
+import { 
+  Search, Plus, Download, Eye, Edit, Trash2, 
+  Ban, CheckCircle, Shield, ShieldOff, Loader2 
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-interface Student {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  course: string;
-  batch: string;
-  enrollmentDate: string;
-  status: "Active" | "Inactive" | "Left";
-  feeStatus: "Paid" | "Pending" | "Overdue";
-}
-
-const initialStudents: Student[] = [
-  { id: 1, name: "Rahul Sharma", email: "rahul@email.com", phone: "9876543210", course: "Web Development", batch: "Morning", enrollmentDate: "2024-01-15", status: "Active", feeStatus: "Paid" },
-  { id: 2, name: "Priya Singh", email: "priya@email.com", phone: "9876543211", course: "Python Programming", batch: "Evening", enrollmentDate: "2024-02-20", status: "Active", feeStatus: "Pending" },
-  { id: 3, name: "Amit Kumar", email: "amit@email.com", phone: "9876543212", course: "Data Science", batch: "Weekend", enrollmentDate: "2024-03-10", status: "Active", feeStatus: "Paid" },
-  { id: 4, name: "Sneha Gupta", email: "sneha@email.com", phone: "9876543213", course: "Java Programming", batch: "Morning", enrollmentDate: "2024-01-25", status: "Inactive", feeStatus: "Overdue" },
-  { id: 5, name: "Vikram Patel", email: "vikram@email.com", phone: "9876543214", course: "Web Development", batch: "Evening", enrollmentDate: "2024-04-05", status: "Active", feeStatus: "Paid" },
-  { id: 6, name: "Anjali Verma", email: "anjali@email.com", phone: "9876543215", course: "Python Programming", batch: "Morning", enrollmentDate: "2024-02-28", status: "Active", feeStatus: "Pending" },
-  { id: 7, name: "Rohit Jain", email: "rohit@email.com", phone: "9876543216", course: "Data Science", batch: "Weekend", enrollmentDate: "2024-03-18", status: "Left", feeStatus: "Paid" },
-  { id: 8, name: "Kavita Reddy", email: "kavita@email.com", phone: "9876543217", course: "Java Programming", batch: "Evening", enrollmentDate: "2024-04-12", status: "Active", feeStatus: "Paid" },
-];
+import { useStudents } from "@/hooks/useStudents";
+import { useCourses } from "@/hooks/useCourses";
+import { useBatches } from "@/hooks/useBatches";
+import { Textarea } from "@/components/ui/textarea";
 
 const Students = () => {
-  const [students, setStudents] = useState<Student[]>(initialStudents);
+  const { students, isLoading, addStudent, toggleBlock, toggleVerify, deleteStudent } = useStudents();
+  const { courses } = useCourses();
+  const { batches } = useBatches();
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [blockReason, setBlockReason] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
   const [newStudent, setNewStudent] = useState({
-    name: "",
+    fullName: "",
     email: "",
+    password: "",
     phone: "",
-    course: "",
-    batch: "",
+    courseId: "",
+    batchId: "",
+    fatherName: "",
+    motherName: "",
+    guardianPhone: "",
+    gender: "",
+    dateOfBirth: "",
+    address: "",
   });
   const { toast } = useToast();
 
   const filteredStudents = students.filter(
     (student) =>
-      student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.course.toLowerCase().includes(searchTerm.toLowerCase())
+      student.profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.profile?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.registration_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.roll_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.course?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAddStudent = () => {
-    if (!newStudent.name || !newStudent.email || !newStudent.course) {
+  const activeStudents = students.filter(s => s.status === "active" && !s.is_blocked);
+  const blockedStudents = students.filter(s => s.is_blocked);
+  const pendingFeeStudents = students.filter(s => s.pending_fee > 0);
+
+  const handleAddStudent = async () => {
+    if (!newStudent.fullName || !newStudent.email || !newStudent.password) {
       toast({
         title: "Error",
-        description: "Please fill all required fields",
+        description: "Please fill all required fields (Name, Email, Password)",
         variant: "destructive",
       });
       return;
     }
 
-    const student: Student = {
-      id: students.length + 1,
-      ...newStudent,
-      enrollmentDate: new Date().toISOString().split("T")[0],
-      status: "Active",
-      feeStatus: "Pending",
-    };
+    if (newStudent.password.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    setStudents([student, ...students]);
-    setNewStudent({ name: "", email: "", phone: "", course: "", batch: "" });
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Student Added",
-      description: `${student.name} has been enrolled successfully.`,
-    });
+    setIsSubmitting(true);
+    const result = await addStudent(newStudent);
+    setIsSubmitting(false);
+
+    if (result.success) {
+      setNewStudent({
+        fullName: "",
+        email: "",
+        password: "",
+        phone: "",
+        courseId: "",
+        batchId: "",
+        fatherName: "",
+        motherName: "",
+        guardianPhone: "",
+        gender: "",
+        dateOfBirth: "",
+        address: "",
+      });
+      setIsAddDialogOpen(false);
+    }
   };
 
-  const handleDeleteStudent = (id: number) => {
-    setStudents(students.filter((s) => s.id !== id));
-    toast({
-      title: "Student Removed",
-      description: "Student has been removed from the system.",
-    });
+  const handleBlockStudent = async () => {
+    if (!selectedStudent) return;
+    setIsSubmitting(true);
+    await toggleBlock(selectedStudent.id, !selectedStudent.is_blocked, blockReason);
+    setIsSubmitting(false);
+    setIsBlockDialogOpen(false);
+    setBlockReason("");
+    setSelectedStudent(null);
   };
 
-  const getStatusBadge = (status: Student["status"]) => {
-    const variants = {
-      Active: "default",
-      Inactive: "secondary",
-      Left: "destructive",
-    } as const;
-    return <Badge variant={variants[status]}>{status}</Badge>;
+  const handleVerifyStudent = async (student: any) => {
+    await toggleVerify(student.id, !student.is_verified);
   };
 
-  const getFeeStatusBadge = (status: Student["feeStatus"]) => {
-    const colors = {
-      Paid: "bg-success/10 text-success border-success/20",
-      Pending: "bg-warning/10 text-warning border-warning/20",
-      Overdue: "bg-destructive/10 text-destructive border-destructive/20",
-    };
+  const handleDeleteStudent = async (student: any) => {
+    if (confirm(`Are you sure you want to remove ${student.profile?.full_name}?`)) {
+      await deleteStudent(student.id);
+    }
+  };
+
+  const getStatusBadge = (student: any) => {
+    if (student.is_blocked) {
+      return <Badge variant="destructive">Blocked</Badge>;
+    }
+    if (student.status === "left") {
+      return <Badge variant="secondary">Left</Badge>;
+    }
+    if (student.status === "inactive") {
+      return <Badge variant="secondary">Inactive</Badge>;
+    }
+    return <Badge variant="default">Active</Badge>;
+  };
+
+  const getFeeStatusBadge = (student: any) => {
+    if (student.pending_fee <= 0) {
+      return (
+        <Badge variant="outline" className="bg-success/10 text-success border-success/20">
+          Paid
+        </Badge>
+      );
+    }
     return (
-      <Badge variant="outline" className={colors[status]}>
-        {status}
+      <Badge variant="outline" className="bg-warning/10 text-warning border-warning/20">
+        ₹{student.pending_fee.toLocaleString()} Due
       </Badge>
     );
   };
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -148,21 +197,21 @@ const Students = () => {
                 Add Student
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Add New Student</DialogTitle>
                 <DialogDescription>
-                  Enter the student details to enroll them in your institute.
+                  Enter student details. Login credentials will be created automatically.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name *</Label>
                   <Input
                     id="name"
                     placeholder="Enter student name"
-                    value={newStudent.name}
-                    onChange={(e) => setNewStudent({ ...newStudent, name: e.target.value })}
+                    value={newStudent.fullName}
+                    onChange={(e) => setNewStudent({ ...newStudent, fullName: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -176,6 +225,16 @@ const Students = () => {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Min 6 characters"
+                    value={newStudent.password}
+                    onChange={(e) => setNewStudent({ ...newStudent, password: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
                   <Input
                     id="phone"
@@ -185,42 +244,118 @@ const Students = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="course">Course *</Label>
+                  <Label htmlFor="course">Course</Label>
                   <Select
-                    value={newStudent.course}
-                    onValueChange={(value) => setNewStudent({ ...newStudent, course: value })}
+                    value={newStudent.courseId}
+                    onValueChange={(value) => setNewStudent({ ...newStudent, courseId: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select course" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Web Development">Web Development</SelectItem>
-                      <SelectItem value="Python Programming">Python Programming</SelectItem>
-                      <SelectItem value="Data Science">Data Science</SelectItem>
-                      <SelectItem value="Java Programming">Java Programming</SelectItem>
+                      {courses.map((course) => (
+                        <SelectItem key={course.id} value={course.id}>
+                          {course.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="batch">Batch</Label>
                   <Select
-                    value={newStudent.batch}
-                    onValueChange={(value) => setNewStudent({ ...newStudent, batch: value })}
+                    value={newStudent.batchId}
+                    onValueChange={(value) => setNewStudent({ ...newStudent, batchId: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select batch" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Morning">Morning (9 AM - 12 PM)</SelectItem>
-                      <SelectItem value="Evening">Evening (5 PM - 8 PM)</SelectItem>
-                      <SelectItem value="Weekend">Weekend</SelectItem>
+                      {batches.map((batch) => (
+                        <SelectItem key={batch.id} value={batch.id}>
+                          {batch.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <Button className="w-full" onClick={handleAddStudent}>
-                  Enroll Student
-                </Button>
+                <div className="space-y-2">
+                  <Label htmlFor="gender">Gender</Label>
+                  <Select
+                    value={newStudent.gender}
+                    onValueChange={(value) => setNewStudent({ ...newStudent, gender: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dob">Date of Birth</Label>
+                  <Input
+                    id="dob"
+                    type="date"
+                    value={newStudent.dateOfBirth}
+                    onChange={(e) => setNewStudent({ ...newStudent, dateOfBirth: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="father">Father's Name</Label>
+                  <Input
+                    id="father"
+                    placeholder="Enter father's name"
+                    value={newStudent.fatherName}
+                    onChange={(e) => setNewStudent({ ...newStudent, fatherName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="mother">Mother's Name</Label>
+                  <Input
+                    id="mother"
+                    placeholder="Enter mother's name"
+                    value={newStudent.motherName}
+                    onChange={(e) => setNewStudent({ ...newStudent, motherName: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="guardian-phone">Guardian Phone</Label>
+                  <Input
+                    id="guardian-phone"
+                    placeholder="9876543210"
+                    value={newStudent.guardianPhone}
+                    onChange={(e) => setNewStudent({ ...newStudent, guardianPhone: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="address">Address</Label>
+                  <Textarea
+                    id="address"
+                    placeholder="Enter full address"
+                    value={newStudent.address}
+                    onChange={(e) => setNewStudent({ ...newStudent, address: e.target.value })}
+                  />
+                </div>
               </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddStudent} disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Enroll Student"
+                  )}
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -240,9 +375,7 @@ const Students = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-success">
-                {students.filter((s) => s.status === "Active").length}
-              </div>
+              <div className="text-2xl font-bold text-success">{activeStudents.length}</div>
             </CardContent>
           </Card>
           <Card className="border-border">
@@ -250,108 +383,272 @@ const Students = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Pending Fees</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-warning">
-                {students.filter((s) => s.feeStatus === "Pending").length}
-              </div>
+              <div className="text-2xl font-bold text-warning">{pendingFeeStudents.length}</div>
             </CardContent>
           </Card>
           <Card className="border-border">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Overdue</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Blocked</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-destructive">
-                {students.filter((s) => s.feeStatus === "Overdue").length}
-              </div>
+              <div className="text-2xl font-bold text-destructive">{blockedStudents.length}</div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Filters and Table */}
+        {/* Table */}
         <Card className="border-border">
           <CardHeader>
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search students..."
+                  placeholder="Search by name, email, ID, or course..."
                   className="pl-10"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" className="gap-2">
-                  <Filter className="w-4 h-4" />
-                  Filter
-                </Button>
-                <Button variant="outline" className="gap-2">
-                  <Download className="w-4 h-4" />
-                  Export
-                </Button>
-              </div>
+              <Button variant="outline" className="gap-2">
+                <Download className="w-4 h-4" />
+                Export
+              </Button>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Course</TableHead>
-                    <TableHead>Batch</TableHead>
-                    <TableHead>Enrolled</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Fee Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredStudents.map((student) => (
-                    <TableRow key={student.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="w-9 h-9 bg-primary/10">
-                            <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
-                              {student.name.split(" ").map((n) => n[0]).join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-medium text-foreground">{student.name}</p>
-                            <p className="text-xs text-muted-foreground">{student.email}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-foreground">{student.course}</TableCell>
-                      <TableCell className="text-muted-foreground">{student.batch}</TableCell>
-                      <TableCell className="text-muted-foreground">{student.enrollmentDate}</TableCell>
-                      <TableCell>{getStatusBadge(student.status)}</TableCell>
-                      <TableCell>{getFeeStatusBadge(student.feeStatus)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => handleDeleteStudent(student.id)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            {filteredStudents.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">
+                  {students.length === 0 ? "No students enrolled yet. Add your first student!" : "No students match your search."}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Student</TableHead>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Course</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Verified</TableHead>
+                      <TableHead>Fee Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredStudents.map((student) => (
+                      <TableRow key={student.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="w-9 h-9 bg-primary/10">
+                              <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                                {student.profile?.full_name?.split(" ").map((n) => n[0]).join("") || "?"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium text-foreground">{student.profile?.full_name || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">{student.profile?.email}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <p className="text-foreground">{student.roll_number || "—"}</p>
+                            <p className="text-xs text-muted-foreground">{student.registration_number}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-foreground">{student.course?.name || "—"}</TableCell>
+                        <TableCell>{getStatusBadge(student)}</TableCell>
+                        <TableCell>
+                          {student.is_verified ? (
+                            <Badge className="bg-success/10 text-success border-success/20" variant="outline">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Verified
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              Pending
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{getFeeStatusBadge(student)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setSelectedStudent(student);
+                                setIsViewDialogOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => handleVerifyStudent(student)}
+                              title={student.is_verified ? "Remove Verification" : "Verify Student"}
+                            >
+                              {student.is_verified ? (
+                                <ShieldOff className="w-4 h-4 text-warning" />
+                              ) : (
+                                <Shield className="w-4 h-4 text-success" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setSelectedStudent(student);
+                                setIsBlockDialogOpen(true);
+                              }}
+                              title={student.is_blocked ? "Unblock Student" : "Block Student"}
+                            >
+                              <Ban className={`w-4 h-4 ${student.is_blocked ? "text-destructive" : ""}`} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteStudent(student)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        {/* Block Dialog */}
+        <Dialog open={isBlockDialogOpen} onOpenChange={setIsBlockDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {selectedStudent?.is_blocked ? "Unblock Student" : "Block Student"}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedStudent?.is_blocked
+                  ? `Are you sure you want to unblock ${selectedStudent?.profile?.full_name}?`
+                  : `This will prevent ${selectedStudent?.profile?.full_name} from accessing the system.`}
+              </DialogDescription>
+            </DialogHeader>
+            {!selectedStudent?.is_blocked && (
+              <div className="space-y-2">
+                <Label>Block Reason</Label>
+                <Textarea
+                  placeholder="Enter reason for blocking (optional)"
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                />
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsBlockDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant={selectedStudent?.is_blocked ? "default" : "destructive"}
+                onClick={handleBlockStudent}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : selectedStudent?.is_blocked ? (
+                  "Unblock"
+                ) : (
+                  "Block"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Student Dialog */}
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Student Details</DialogTitle>
+            </DialogHeader>
+            {selectedStudent && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <Avatar className="w-16 h-16 bg-primary/10">
+                    <AvatarFallback className="bg-primary/10 text-primary text-xl font-medium">
+                      {selectedStudent.profile?.full_name?.split(" ").map((n: string) => n[0]).join("") || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {selectedStudent.profile?.full_name}
+                    </h3>
+                    <p className="text-muted-foreground">{selectedStudent.profile?.email}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Registration No.</p>
+                    <p className="font-medium text-foreground">{selectedStudent.registration_number || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Roll No.</p>
+                    <p className="font-medium text-foreground">{selectedStudent.roll_number || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Course</p>
+                    <p className="font-medium text-foreground">{selectedStudent.course?.name || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Batch</p>
+                    <p className="font-medium text-foreground">{selectedStudent.batch?.name || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Phone</p>
+                    <p className="font-medium text-foreground">{selectedStudent.profile?.phone || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Gender</p>
+                    <p className="font-medium text-foreground capitalize">{selectedStudent.gender || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Father's Name</p>
+                    <p className="font-medium text-foreground">{selectedStudent.father_name || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Mother's Name</p>
+                    <p className="font-medium text-foreground">{selectedStudent.mother_name || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Total Fee</p>
+                    <p className="font-medium text-foreground">₹{selectedStudent.total_fee?.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Pending Fee</p>
+                    <p className="font-medium text-warning">₹{selectedStudent.pending_fee?.toLocaleString()}</p>
+                  </div>
+                </div>
+
+                {selectedStudent.is_blocked && selectedStudent.block_reason && (
+                  <div className="p-3 bg-destructive/10 rounded-lg">
+                    <p className="text-sm text-destructive font-medium">Block Reason:</p>
+                    <p className="text-sm text-foreground">{selectedStudent.block_reason}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
