@@ -18,11 +18,41 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Authenticate the request
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      throw new Error("Missing authorization header");
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) {
+      console.error("Auth error:", authError);
+      throw new Error("Invalid authentication");
+    }
+
     const { userId, instituteName, email, phone } = await req.json();
     console.log("Setting up institute for user:", userId, instituteName);
 
     if (!userId || !instituteName || !email) {
       throw new Error("Missing required fields: userId, instituteName, email");
+    }
+
+    // Verify the authenticated user matches the userId in the request
+    if (user.id !== userId) {
+      console.error("User ID mismatch:", user.id, "vs", userId);
+      throw new Error("Can only setup institute for your own account");
+    }
+
+    // Check if user already has a role (prevent duplicate setups)
+    const { data: existingRoles } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId);
+
+    if (existingRoles && existingRoles.length > 0) {
+      throw new Error("User already has a role assigned");
     }
 
     // 1. Create institute
