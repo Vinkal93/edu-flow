@@ -18,11 +18,56 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Authenticate the request
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      throw new Error("Missing authorization header");
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    
+    if (authError || !user) {
+      console.error("Auth error:", authError);
+      throw new Error("Invalid authentication");
+    }
+
+    console.log("Authenticated user:", user.id);
+
+    // Verify user has institute_admin role
+    const { data: roles } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
+
+    const hasAdminRole = roles?.some(r => r.role === "institute_admin");
+    if (!hasAdminRole) {
+      console.error("User lacks admin role:", user.id);
+      throw new Error("Insufficient permissions. Only institute admins can create teachers.");
+    }
+
+    // Get admin's institute
+    const { data: adminProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("institute_id")
+      .eq("id", user.id)
+      .single();
+
+    if (!adminProfile?.institute_id) {
+      throw new Error("Admin is not associated with any institute");
+    }
+
     const { email, password, fullName, phone, instituteId, employeeId, qualification, subjects, salary } = await req.json();
     console.log("Creating teacher account:", email, fullName, instituteId);
 
     if (!email || !password || !fullName || !instituteId) {
       throw new Error("Missing required fields: email, password, fullName, instituteId");
+    }
+
+    // Verify admin belongs to the target institute
+    if (adminProfile.institute_id !== instituteId) {
+      console.error("Institute mismatch:", adminProfile.institute_id, "vs", instituteId);
+      throw new Error("Cannot create teachers for other institutes");
     }
 
     // 1. Create auth user

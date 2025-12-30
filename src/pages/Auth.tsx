@@ -52,18 +52,28 @@ const Auth = () => {
           return profile?.email || null;
         }
       } else {
-        // Look up student by registration_number or roll_number
-        const { data: student } = await supabase
+        // Look up student by registration_number first, then roll_number
+        // Using separate queries to prevent SQL injection
+        let student = await supabase
           .from("students")
           .select("profile_id")
-          .or(`registration_number.eq.${id},roll_number.eq.${id}`)
+          .eq("registration_number", id)
           .maybeSingle();
 
-        if (student?.profile_id) {
+        if (!student.data) {
+          student = await supabase
+            .from("students")
+            .select("profile_id")
+            .eq("roll_number", id)
+            .maybeSingle();
+        }
+        const studentData = student.data;
+
+        if (studentData?.profile_id) {
           const { data: profile } = await supabase
             .from("profiles")
             .select("email")
-            .eq("id", student.profile_id)
+            .eq("id", studentData.profile_id)
             .maybeSingle();
           return profile?.email || null;
         }
