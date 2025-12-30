@@ -1,1 +1,13 @@
 project_id = "whjbciwdpwiyjkcrlsfy"
+
+[functions.setup-institute]
+verify_jwt = false
+
+[functions.create-student-account]
+verify_jwt = true
+
+[functions.create-teacher-account]
+verify_jwt = true
+
+[functions.login-with-id]
+verify_jwt = false

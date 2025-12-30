@@ -9,7 +9,6 @@ import { GraduationCap, Eye, EyeOff, Building2, User, BookOpen } from "lucide-re
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { z } from "zod";
 
 const Auth = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -39,17 +38,7 @@ const Auth = () => {
     if (!identifier.trim() || !password.trim()) {
       toast({
         title: "Validation Error",
-        description: "Please enter your email and password",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Always require email for login (teachers/students cannot be looked up pre-auth due to database security rules)
-    if (!identifier.includes("@")) {
-      toast({
-        title: "Validation Error",
-        description: "Please enter a valid email address",
+        description: `Please enter your ${loginType === "institute" ? "email" : "ID"} and password`,
         variant: "destructive",
       });
       return;
@@ -57,37 +46,100 @@ const Auth = () => {
 
     setIsLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: identifier,
-      password,
-    });
+    // For institute login, use email directly
+    if (loginType === "institute") {
+      if (!identifier.includes("@")) {
+        toast({
+          title: "Validation Error",
+          description: "Please enter a valid email address",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
 
-    if (error) {
-      toast({
-        title: "Login Failed",
-        description:
-          error.message === "Invalid login credentials"
-            ? "Invalid credentials. Please check and try again."
-            : error.message,
-        variant: "destructive",
+      const { error } = await supabase.auth.signInWithPassword({
+        email: identifier,
+        password,
       });
+
+      if (error) {
+        toast({
+          title: "Login Failed",
+          description:
+            error.message === "Invalid login credentials"
+              ? "Invalid credentials. Please check and try again."
+              : error.message,
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      toast({
+        title: "Login Successful",
+        description: "Redirecting...",
+      });
+
+      setTimeout(() => {
+        navigate("/dashboard", { replace: true });
+      }, 500);
+
       setIsLoading(false);
       return;
     }
 
-    toast({
-      title: "Login Successful",
-      description: "Redirecting...",
-    });
+    // For teacher/student login, use edge function to validate ID
+    try {
+      const { data, error } = await supabase.functions.invoke("login-with-id", {
+        body: {
+          userType: loginType,
+          identifier: identifier.trim(),
+          password,
+        },
+      });
 
-    // Let the AuthProvider load roles; keep a small fallback redirect
-    setTimeout(() => {
-      navigate("/dashboard", { replace: true });
-    }, 500);
+      if (error || !data?.success) {
+        toast({
+          title: "Login Failed",
+          description: data?.error || "Invalid credentials. Please check your ID and password.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      // Set the session from the edge function response
+      if (data.session) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+      }
+
+      toast({
+        title: "Login Successful",
+        description: "Redirecting...",
+      });
+
+      setTimeout(() => {
+        if (loginType === "student") {
+          navigate("/student", { replace: true });
+        } else {
+          navigate("/dashboard", { replace: true });
+        }
+      }, 500);
+    } catch (err: any) {
+      console.error("Login error:", err);
+      toast({
+        title: "Login Failed",
+        description: "An error occurred. Please try again.",
+        variant: "destructive",
+      });
+    }
 
     setIsLoading(false);
   };
-
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,7 +176,6 @@ const Auth = () => {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
-      // 1. Create auth user
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: identifier,
         password,
@@ -164,8 +215,7 @@ const Auth = () => {
         return;
       }
 
-      // 2. Setup institute using edge function
-      const { data: setupResult, error: setupError } = await supabase.functions.invoke("setup-institute", {
+      const { error: setupError } = await supabase.functions.invoke("setup-institute", {
         body: {
           userId: signUpData.user.id,
           instituteName: fullName,
@@ -190,7 +240,6 @@ const Auth = () => {
         description: "Your institute has been registered. Please login to continue.",
       });
       
-      // Clear form
       setFullName("");
       setIdentifier("");
       setPassword("");
@@ -214,14 +263,27 @@ const Auth = () => {
   ] as const;
 
   const getPlaceholder = () => {
-    return "Enter your email address";
+    switch (loginType) {
+      case "teacher":
+        return "Enter your Employee ID";
+      case "student":
+        return "Enter your Roll/Registration Number";
+      default:
+        return "Enter your email address";
+    }
   };
 
   const getLabel = () => {
-    return "Email Address";
+    switch (loginType) {
+      case "teacher":
+        return "Employee ID";
+      case "student":
+        return "Roll/Registration Number";
+      default:
+        return "Email Address";
+    }
   };
 
-  // Show loading while checking auth state
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -274,7 +336,9 @@ const Auth = () => {
               {loginTypes.find((t) => t.id === loginType)?.description}
             </CardTitle>
             <CardDescription>
-              Enter your email and password
+              {loginType === "institute" 
+                ? "Enter your email and password"
+                : `Enter your ${loginType === "teacher" ? "Employee ID" : "Roll/Registration Number"} and password`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -292,17 +356,25 @@ const Auth = () => {
                     <Label htmlFor="identifier">{getLabel()}</Label>
                     <Input
                       id="identifier"
-                      type="email"
+                      type={loginType === "institute" ? "email" : "text"}
                       placeholder={getPlaceholder()}
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
                       required
-                      autoComplete="username"
+                      autoComplete={loginType === "institute" ? "username" : "off"}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">Password</Label>
+                      <Link 
+                        to="/forgot-password" 
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Forgot Password?
+                      </Link>
+                    </div>
                     <div className="relative">
                       <Input
                         id="password"
@@ -385,7 +457,7 @@ const Auth = () => {
 
             {loginType !== "institute" && (
               <p className="text-xs text-muted-foreground text-center mt-4 p-2 bg-muted/50 rounded-lg">
-                Use the email and password provided by your institute
+                Use the {loginType === "teacher" ? "Employee ID" : "Roll/Registration Number"} and password provided by your institute
               </p>
             )}
           </CardContent>
