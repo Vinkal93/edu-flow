@@ -1,0 +1,104 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    const { email, password, fullName, phone, instituteId, employeeId, qualification, subjects, salary } = await req.json();
+    console.log("Creating teacher account:", email, fullName, instituteId);
+
+    if (!email || !password || !fullName || !instituteId) {
+      throw new Error("Missing required fields: email, password, fullName, instituteId");
+    }
+
+    // 1. Create auth user
+    const { data: userData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+
+    if (createError) {
+      console.error("Error creating user:", createError);
+      throw createError;
+    }
+
+    console.log("Auth user created:", userData.user.id);
+
+    // 2. Update profile with institute
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .update({
+        institute_id: instituteId,
+        phone: phone || null,
+      })
+      .eq("id", userData.user.id);
+
+    if (profileError) {
+      console.error("Error updating profile:", profileError);
+      throw profileError;
+    }
+
+    // 3. Add teacher role
+    const { error: roleError } = await supabaseAdmin
+      .from("user_roles")
+      .insert({
+        user_id: userData.user.id,
+        role: "teacher",
+      });
+
+    if (roleError) {
+      console.error("Error adding role:", roleError);
+      throw roleError;
+    }
+
+    // 4. Create teacher record
+    const { error: teacherError } = await supabaseAdmin
+      .from("teachers")
+      .insert({
+        profile_id: userData.user.id,
+        institute_id: instituteId,
+        employee_id: employeeId || `EMP${Date.now().toString().slice(-8)}`,
+        qualification: qualification || null,
+        subjects: subjects || [],
+        salary: salary || 0,
+      });
+
+    if (teacherError) {
+      console.error("Error creating teacher record:", teacherError);
+      throw teacherError;
+    }
+
+    console.log("Teacher record created successfully");
+
+    return new Response(
+      JSON.stringify({ 
+        userId: userData.user.id,
+        message: "Teacher account created successfully"
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    console.error("Error in create-teacher-account:", errorMessage);
+    return new Response(
+      JSON.stringify({ error: errorMessage }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

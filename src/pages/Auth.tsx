@@ -193,39 +193,89 @@ const Auth = () => {
 
     setIsLoading(true);
 
-    const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
-      email: identifier,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          full_name: fullName,
+    try {
+      const redirectUrl = `${window.location.origin}/`;
+      
+      // 1. Create auth user
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: identifier,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            full_name: fullName,
+          },
         },
-      },
-    });
+      });
 
-    if (error) {
-      if (error.message.includes("already registered")) {
-        toast({
-          title: "Account Exists",
-          description: "This email is already registered. Please login instead.",
-          variant: "destructive",
-        });
-      } else {
+      if (signUpError) {
+        if (signUpError.message.includes("already registered")) {
+          toast({
+            title: "Account Exists",
+            description: "This email is already registered. Please login instead.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Registration Failed",
+            description: signUpError.message,
+            variant: "destructive",
+          });
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      if (!signUpData.user) {
         toast({
           title: "Registration Failed",
-          description: error.message,
+          description: "Failed to create account",
           variant: "destructive",
         });
+        setIsLoading(false);
+        return;
       }
-    } else {
+
+      // 2. Setup institute using edge function
+      const { data: setupResult, error: setupError } = await supabase.functions.invoke("setup-institute", {
+        body: {
+          userId: signUpData.user.id,
+          instituteName: fullName,
+          email: identifier,
+          phone: null,
+        },
+      });
+
+      if (setupError) {
+        console.error("Institute setup error:", setupError);
+        toast({
+          title: "Setup Error",
+          description: "Account created but institute setup failed. Please contact support.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
       toast({
         title: "Registration Successful",
-        description: "Your account has been created. Please login.",
+        description: "Your institute has been registered. Please login to continue.",
+      });
+      
+      // Clear form
+      setFullName("");
+      setIdentifier("");
+      setPassword("");
+      
+    } catch (error: any) {
+      console.error("Signup error:", error);
+      toast({
+        title: "Registration Failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
       });
     }
+    
     setIsLoading(false);
   };
 

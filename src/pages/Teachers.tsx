@@ -20,103 +20,108 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Search, Plus, Eye, Edit, Trash2 } from "lucide-react";
+import { Search, Plus, Eye, Trash2, Loader2, UserCheck, UserX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-interface Teacher {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  subject: string;
-  qualification: string;
-  salary: number;
-  joiningDate: string;
-  status: "Active" | "On Leave" | "Resigned";
-}
-
-const initialTeachers: Teacher[] = [
-  { id: 1, name: "Dr. Rajesh Verma", email: "rajesh@edupro.com", phone: "9876543220", subject: "Web Development", qualification: "M.Tech, PhD", salary: 45000, joiningDate: "2022-05-15", status: "Active" },
-  { id: 2, name: "Prof. Meena Sharma", email: "meena@edupro.com", phone: "9876543221", subject: "Python Programming", qualification: "M.Sc, B.Ed", salary: 38000, joiningDate: "2023-01-10", status: "Active" },
-  { id: 3, name: "Sunil Kumar", email: "sunil@edupro.com", phone: "9876543222", subject: "Data Science", qualification: "M.Tech (AI/ML)", salary: 52000, joiningDate: "2022-08-20", status: "Active" },
-  { id: 4, name: "Anita Patel", email: "anita@edupro.com", phone: "9876543223", subject: "Java Programming", qualification: "MCA", salary: 35000, joiningDate: "2023-03-05", status: "On Leave" },
-  { id: 5, name: "Vikash Singh", email: "vikash@edupro.com", phone: "9876543224", subject: "Database Management", qualification: "M.Sc (IT)", salary: 40000, joiningDate: "2022-11-12", status: "Active" },
-];
+import { useTeachers } from "@/hooks/useTeachers";
 
 const Teachers = () => {
-  const [teachers, setTeachers] = useState<Teacher[]>(initialTeachers);
+  const { teachers, isLoading, addTeacher, toggleActive, deleteTeacher } = useTeachers();
   const [searchTerm, setSearchTerm] = useState("");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [selectedTeacher, setSelectedTeacher] = useState<any>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [newTeacher, setNewTeacher] = useState({
-    name: "",
+    fullName: "",
     email: "",
+    password: "",
     phone: "",
-    subject: "",
+    employeeId: "",
     qualification: "",
-    salary: "",
+    subjects: [] as string[],
+    salary: 0,
   });
   const { toast } = useToast();
 
   const filteredTeachers = teachers.filter(
     (teacher) =>
-      teacher.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      teacher.subject.toLowerCase().includes(searchTerm.toLowerCase())
+      teacher.profile?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      teacher.profile?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      teacher.employee_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      teacher.subjects?.some(s => s.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const handleAddTeacher = () => {
-    if (!newTeacher.name || !newTeacher.email || !newTeacher.subject) {
+  const activeTeachers = teachers.filter(t => t.is_active);
+  const inactiveTeachers = teachers.filter(t => !t.is_active);
+  const totalSalary = activeTeachers.reduce((sum, t) => sum + (t.salary || 0), 0);
+
+  const handleAddTeacher = async () => {
+    if (!newTeacher.fullName || !newTeacher.email || !newTeacher.password) {
       toast({
         title: "Error",
-        description: "Please fill all required fields",
+        description: "Please fill all required fields (Name, Email, Password)",
         variant: "destructive",
       });
       return;
     }
 
-    const teacher: Teacher = {
-      id: teachers.length + 1,
-      ...newTeacher,
-      salary: parseInt(newTeacher.salary) || 0,
-      joiningDate: new Date().toISOString().split("T")[0],
-      status: "Active",
-    };
+    if (newTeacher.password.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    setTeachers([teacher, ...teachers]);
-    setNewTeacher({ name: "", email: "", phone: "", subject: "", qualification: "", salary: "" });
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Teacher Added",
-      description: `${teacher.name} has been added successfully.`,
-    });
+    setIsSubmitting(true);
+    const result = await addTeacher(newTeacher);
+    setIsSubmitting(false);
+
+    if (result.success) {
+      setNewTeacher({
+        fullName: "",
+        email: "",
+        password: "",
+        phone: "",
+        employeeId: "",
+        qualification: "",
+        subjects: [],
+        salary: 0,
+      });
+      setIsAddDialogOpen(false);
+    }
   };
 
-  const handleDeleteTeacher = (id: number) => {
-    setTeachers(teachers.filter((t) => t.id !== id));
-    toast({
-      title: "Teacher Removed",
-      description: "Teacher has been removed from the system.",
-    });
+  const handleToggleActive = async (teacher: any) => {
+    await toggleActive(teacher.id, !teacher.is_active);
   };
 
-  const getStatusBadge = (status: Teacher["status"]) => {
-    const variants = {
-      Active: "default",
-      "On Leave": "secondary",
-      Resigned: "destructive",
-    } as const;
-    return <Badge variant={variants[status]}>{status}</Badge>;
+  const handleDeleteTeacher = async (teacher: any) => {
+    if (confirm(`Are you sure you want to remove ${teacher.profile?.full_name}?`)) {
+      await deleteTeacher(teacher.id);
+    }
   };
 
-  const totalSalary = teachers.filter((t) => t.status === "Active").reduce((sum, t) => sum + t.salary, 0);
+  const getStatusBadge = (teacher: any) => {
+    if (!teacher.is_active) {
+      return <Badge variant="secondary">Inactive</Badge>;
+    }
+    return <Badge variant="default">Active</Badge>;
+  };
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -134,21 +139,21 @@ const Teachers = () => {
                 Add Teacher
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>Add New Teacher</DialogTitle>
                 <DialogDescription>
-                  Enter the teacher details to add them to your institute.
+                  Enter teacher details. Login credentials will be created automatically.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name *</Label>
                   <Input
                     id="name"
                     placeholder="Enter teacher name"
-                    value={newTeacher.name}
-                    onChange={(e) => setNewTeacher({ ...newTeacher, name: e.target.value })}
+                    value={newTeacher.fullName}
+                    onChange={(e) => setNewTeacher({ ...newTeacher, fullName: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -162,6 +167,16 @@ const Teachers = () => {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="password">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Min 6 characters"
+                    value={newTeacher.password}
+                    onChange={(e) => setNewTeacher({ ...newTeacher, password: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
                   <Input
                     id="phone"
@@ -171,22 +186,13 @@ const Teachers = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="subject">Subject *</Label>
-                  <Select
-                    value={newTeacher.subject}
-                    onValueChange={(value) => setNewTeacher({ ...newTeacher, subject: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select subject" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Web Development">Web Development</SelectItem>
-                      <SelectItem value="Python Programming">Python Programming</SelectItem>
-                      <SelectItem value="Data Science">Data Science</SelectItem>
-                      <SelectItem value="Java Programming">Java Programming</SelectItem>
-                      <SelectItem value="Database Management">Database Management</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="employee-id">Employee ID</Label>
+                  <Input
+                    id="employee-id"
+                    placeholder="Auto-generated if empty"
+                    value={newTeacher.employeeId}
+                    onChange={(e) => setNewTeacher({ ...newTeacher, employeeId: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="qualification">Qualification</Label>
@@ -198,19 +204,42 @@ const Teachers = () => {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="subjects">Subjects (comma separated)</Label>
+                  <Input
+                    id="subjects"
+                    placeholder="Math, Science, English"
+                    onChange={(e) => setNewTeacher({ 
+                      ...newTeacher, 
+                      subjects: e.target.value.split(",").map(s => s.trim()).filter(Boolean) 
+                    })}
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="salary">Monthly Salary (₹)</Label>
                   <Input
                     id="salary"
                     type="number"
                     placeholder="35000"
-                    value={newTeacher.salary}
-                    onChange={(e) => setNewTeacher({ ...newTeacher, salary: e.target.value })}
+                    value={newTeacher.salary || ""}
+                    onChange={(e) => setNewTeacher({ ...newTeacher, salary: parseInt(e.target.value) || 0 })}
                   />
                 </div>
-                <Button className="w-full" onClick={handleAddTeacher}>
-                  Add Teacher
-                </Button>
               </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddTeacher} disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    "Add Teacher"
+                  )}
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -230,19 +259,15 @@ const Teachers = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Active</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-success">
-                {teachers.filter((t) => t.status === "Active").length}
-              </div>
+              <div className="text-2xl font-bold text-success">{activeTeachers.length}</div>
             </CardContent>
           </Card>
           <Card className="border-border">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">On Leave</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Inactive</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-warning">
-                {teachers.filter((t) => t.status === "On Leave").length}
-              </div>
+              <div className="text-2xl font-bold text-warning">{inactiveTeachers.length}</div>
             </CardContent>
           </Card>
           <Card className="border-border">
@@ -261,7 +286,7 @@ const Teachers = () => {
             <div className="relative max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search teachers..."
+                placeholder="Search by name, email, or ID..."
                 className="pl-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -269,65 +294,167 @@ const Teachers = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Teacher</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Qualification</TableHead>
-                    <TableHead>Salary</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTeachers.map((teacher) => (
-                    <TableRow key={teacher.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="w-9 h-9 bg-secondary">
-                            <AvatarFallback className="bg-secondary text-secondary-foreground text-sm font-medium">
-                              {teacher.name.split(" ").map((n) => n[0]).join("")}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-medium text-foreground">{teacher.name}</p>
-                            <p className="text-xs text-muted-foreground">{teacher.email}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-foreground">{teacher.subject}</TableCell>
-                      <TableCell className="text-muted-foreground">{teacher.qualification}</TableCell>
-                      <TableCell className="text-foreground font-medium">₹{teacher.salary.toLocaleString()}</TableCell>
-                      <TableCell className="text-muted-foreground">{teacher.joiningDate}</TableCell>
-                      <TableCell>{getStatusBadge(teacher.status)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => handleDeleteTeacher(teacher.id)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            {filteredTeachers.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">
+                  {teachers.length === 0 ? "No teachers added yet. Add your first teacher!" : "No teachers match your search."}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Teacher</TableHead>
+                      <TableHead>Employee ID</TableHead>
+                      <TableHead>Subjects</TableHead>
+                      <TableHead>Qualification</TableHead>
+                      <TableHead>Salary</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTeachers.map((teacher) => (
+                      <TableRow key={teacher.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="w-9 h-9 bg-secondary">
+                              <AvatarFallback className="bg-secondary text-secondary-foreground text-sm font-medium">
+                                {teacher.profile?.full_name?.split(" ").map((n) => n[0]).join("") || "?"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium text-foreground">{teacher.profile?.full_name || "N/A"}</p>
+                              <p className="text-xs text-muted-foreground">{teacher.profile?.email}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-foreground font-mono">{teacher.employee_id || "—"}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {teacher.subjects?.slice(0, 2).map((subject, i) => (
+                              <Badge key={i} variant="outline" className="text-xs">
+                                {subject}
+                              </Badge>
+                            ))}
+                            {(teacher.subjects?.length || 0) > 2 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{(teacher.subjects?.length || 0) - 2}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{teacher.qualification || "—"}</TableCell>
+                        <TableCell className="text-foreground font-medium">₹{(teacher.salary || 0).toLocaleString()}</TableCell>
+                        <TableCell>{getStatusBadge(teacher)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => {
+                                setSelectedTeacher(teacher);
+                                setIsViewDialogOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleToggleActive(teacher)}
+                              title={teacher.is_active ? "Deactivate Teacher" : "Activate Teacher"}
+                            >
+                              {teacher.is_active ? (
+                                <UserX className="w-4 h-4 text-warning" />
+                              ) : (
+                                <UserCheck className="w-4 h-4 text-success" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => handleDeleteTeacher(teacher)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        {/* View Teacher Dialog */}
+        <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Teacher Details</DialogTitle>
+            </DialogHeader>
+            {selectedTeacher && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <Avatar className="w-16 h-16 bg-secondary">
+                    <AvatarFallback className="bg-secondary text-secondary-foreground text-xl font-medium">
+                      {selectedTeacher.profile?.full_name?.split(" ").map((n: string) => n[0]).join("") || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">
+                      {selectedTeacher.profile?.full_name}
+                    </h3>
+                    <p className="text-muted-foreground">{selectedTeacher.profile?.email}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Employee ID</p>
+                    <p className="font-medium text-foreground font-mono">{selectedTeacher.employee_id || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Phone</p>
+                    <p className="font-medium text-foreground">{selectedTeacher.profile?.phone || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Qualification</p>
+                    <p className="font-medium text-foreground">{selectedTeacher.qualification || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Experience</p>
+                    <p className="font-medium text-foreground">{selectedTeacher.experience_years || 0} years</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Salary</p>
+                    <p className="font-medium text-foreground">₹{(selectedTeacher.salary || 0).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Joining Date</p>
+                    <p className="font-medium text-foreground">{selectedTeacher.joining_date || "—"}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-muted-foreground">Subjects</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedTeacher.subjects?.map((subject: string, i: number) => (
+                        <Badge key={i} variant="outline">
+                          {subject}
+                        </Badge>
+                      )) || <span className="text-muted-foreground">—</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </DashboardLayout>
   );
